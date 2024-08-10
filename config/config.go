@@ -26,9 +26,9 @@ type Config struct {
 
 	RpcNodes []string `yaml:"rpcNodes"`;
 
-	MaxWorkers int64 `yaml:"maxWorkers"`;
+	MaxWorkers uint `yaml:"maxWorkers"`;
 
-	BlocksPerRequest int64 `yaml:"blocksPerRequest"`;
+	BlocksPerRequest uint `yaml:"blocksPerRequest"`;
 };
 
 func LoadConfig(configFile string) (*Config, error) {
