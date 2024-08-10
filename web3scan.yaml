@@ -1,0 +1,30 @@
+database:
+  user: web3scan
+  database: web3scan
+  hostname: 127.0.0.1
+  password: web3scan
+
+chainId: 137
+
+maxWorkers: 5
+
+blocksPerRequest: 1000
+
+rpcNodes:
+  - "https://polygon.llamarpc.com"
+  - "https://polygon-rpc.com"
+  - "https://polygon.drpc.org"
+  - "https://polygon.gateway.tenderly.co"
+
+contracts:
+  - name: "Wrapped ETH"
+    startBlock: 3678215
+    address: "0x7ceb23fd6bc0add59e62ac25578270cff1b9f619"
+    events:
+      - "Transfer(address,address,uint256)"
+
+  - name: "USDC"
+    startBlock: 45319261
+    address: "0x3c499c542cef5e3811e1192ce70d8cc03d5c3359"
+    events:
+      - "Transfer(address,address,uint256)"
