@@ -7,6 +7,7 @@ import (
 
 type Contract struct {
 	Name string `yaml:"name"`;
+	AbiPath string `yaml:"abiPath"`;
 	Address string `yaml:"address"`;
 	Events []string `yaml:"events"`;
 	StartBlock int64 `yaml:"startBlock"`;
