@@ -8,7 +8,7 @@ chainId: 137
 
 maxWorkers: 5
 
-blocksPerRequest: 1000
+blocksPerRequest: 10000
 
 rpcNodes:
   - "https://polygon.llamarpc.com"
