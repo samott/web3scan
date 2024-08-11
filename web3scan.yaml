@@ -8,13 +8,11 @@ chainId: 137
 
 maxWorkers: 5
 
-blocksPerRequest: 10000
+blocksPerRequest: 1000
 
 rpcNodes:
   - "https://polygon.llamarpc.com"
   - "https://polygon-rpc.com"
-  - "https://polygon.drpc.org"
-  - "https://polygon.gateway.tenderly.co"
 
 contracts:
   - name: "Wrapped ETH"
