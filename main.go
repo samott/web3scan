@@ -1,10 +1,17 @@
 package main
 
 import (
+	"time"
+	"sync"
+	"math/rand"
 	"context"
 	"log/slog"
 	"math/big"
 	"os"
+
+	"database/sql"
+
+	"github.com/go-sql-driver/mysql"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -16,6 +23,12 @@ import (
 )
 
 var abis map[string]*abi.ABI;
+
+type ScanParams struct {
+	contract string;
+	startBlock uint64;
+	endBlock uint64;
+}
 
 func scanBlocks(
 	contract string,
@@ -52,9 +65,9 @@ func scanBlocks(
 		return;
 	}
 
-	for _, log := range logs {
-		slog.Info("Event", "block", log.BlockNumber, "index", log.Index);
+	slog.Info("Processing events from block", "count", len(logs));
 
+	for _, log := range logs {
 		data := map[string]any{};
 		eventHash := log.Topics[0];
 
@@ -95,7 +108,7 @@ func scanBlocks(
 			}
 		}
 
-		slog.Info("Event", "event", data);
+		//slog.Info("Event", "event", data);
     }
 }
 
@@ -132,6 +145,26 @@ func loadAbis(contracts []config.Contract) (map[string]*abi.ABI, error) {
 	return abis, nil;
 }
 
+func worker(wg *sync.WaitGroup, ch chan ScanParams, cfg *config.Config, workerId uint) {
+	defer wg.Done();
+
+	for job := range ch {
+		slog.Info("Start work", "workerId", workerId, "job", job);
+
+		rpc := cfg.RpcNodes[rand.Intn(len(cfg.RpcNodes))];
+
+		scanBlocks(
+			job.contract,
+			rpc,
+			abis[job.contract],
+			job.startBlock,
+			job.endBlock,
+		);
+
+		time.Sleep(time.Second);
+	}
+}
+
 func main() {
 	slog.Info("Running...");
 
@@ -142,22 +175,75 @@ func main() {
 		return;
 	}
 
-	abis, err := loadAbis(cfg.Contracts);
+	abis, err = loadAbis(cfg.Contracts);
 
 	if err != nil {
 		slog.Error("Error loading ABI", "error", err);
 		return;
 	}
 
+	client, err := ethclient.Dial(cfg.RpcNodes[0]);
+
+	if err != nil {
+		slog.Error("Error creating eth client", "error", err);
+		return;
+	}
+
+	latestBlock, err := client.BlockNumber(context.Background());
+
+	if err != nil {
+		slog.Error("Error getting latest block number", "error", err);
+		return;
+	}
+
+	dbConfig := mysql.Config{
+		User: cfg.Database.User,
+		DBName: cfg.Database.DBName,
+		Addr: cfg.Database.Addr,
+		AllowNativePasswords: true,
+	};
+
+	db, err := sql.Open("mysql", dbConfig.FormatDSN());
+
+	if err != nil {
+		slog.Error("Error connecting to database", "error", err);
+		return;
+	}
+
+	defer db.Close();
+
 	contract := cfg.Contracts[0];
 
-	start := uint64(contract.StartBlock);
+	startBlock := uint64(contract.StartBlock);
 
-	scanBlocks(
-		contract.Address,
-		cfg.RpcNodes[0],
-		abis[contract.Address],
-		start,
-		start + uint64(cfg.BlocksPerRequest),
-	);
+	var wg sync.WaitGroup;
+
+	ch := make(chan ScanParams);
+
+	wg.Add(int(cfg.MaxWorkers));
+
+	for i := range(cfg.MaxWorkers) {
+		go worker(&wg, ch, cfg, i);
+	}
+
+	go func() {
+		slog.Info("Starting master...");
+
+		defer wg.Done();
+		defer close(ch);
+
+		for startBlock < latestBlock {
+			var params ScanParams = ScanParams{
+				contract.Address,
+				startBlock,
+				startBlock + uint64(cfg.BlocksPerRequest),
+			};
+
+			ch <- params;
+
+			startBlock += uint64(cfg.BlocksPerRequest);
+		}
+	}();
+
+	wg.Wait();
 }
