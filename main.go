@@ -214,7 +214,7 @@ func main() {
 
 	contract := cfg.Contracts[0];
 
-	startBlock := uint64(contract.StartBlock);
+	lastBlock := uint64(contract.StartBlock) - 1;
 
 	var wg sync.WaitGroup;
 
@@ -232,16 +232,16 @@ func main() {
 		defer wg.Done();
 		defer close(ch);
 
-		for startBlock < latestBlock {
+		for lastBlock < latestBlock {
 			var params ScanParams = ScanParams{
 				contract.Address,
-				startBlock,
-				startBlock + uint64(cfg.BlocksPerRequest),
+				lastBlock + 1,
+				lastBlock + uint64(cfg.BlocksPerRequest),
 			};
 
 			ch <- params;
 
-			startBlock += uint64(cfg.BlocksPerRequest);
+			lastBlock += uint64(cfg.BlocksPerRequest);
 		}
 	}();
 
