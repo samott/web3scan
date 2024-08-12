@@ -124,7 +124,7 @@ func scanBlocks(
 			txHash: log.TxHash,
 		};
 		//slog.Info("Event", "event", data);
-    }
+	}
 
 	return events, nil;
 }
