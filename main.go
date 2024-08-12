@@ -30,18 +30,25 @@ type ScanParams struct {
 	endBlock uint64;
 }
 
+type Event struct {
+	args map[string]any;
+	contract string;
+	event string;
+	txHash common.Hash;
+}
+
 func scanBlocks(
 	contract string,
 	rpcUrl string,
 	abi *abi.ABI,
 	startBlock uint64,
 	endBlock uint64,
-) {
+) ([]Event, error) {
 	client, err := ethclient.Dial(rpcUrl);
 
 	if err != nil {
 		slog.Error("Failed to connect to RPC node", "error", err);
-		return;
+		return nil, err;
 	}
 
 	contractAddress := common.HexToAddress(contract);
@@ -62,12 +69,14 @@ func scanBlocks(
 
 	if err != nil {
 		slog.Error("Error filtering logs", "error", err);
-		return;
+		return nil, err;
 	}
 
 	slog.Info("Processing events from block", "count", len(logs));
 
-	for _, log := range logs {
+	events := make([]Event, len(logs));
+
+	for i, log := range logs {
 		data := map[string]any{};
 		eventHash := log.Topics[0];
 
@@ -75,7 +84,7 @@ func scanBlocks(
 
 		if err != nil {
 			slog.Error("Error getting event ABI", "error", err);
-			return;
+			return nil, err;
 		}
 
 		gotArgs := 0;
@@ -100,7 +109,7 @@ func scanBlocks(
 
 			if err != nil {
 				slog.Error("Error getting event ABI", "error", err);
-				return;
+				return nil, err;
 			}
 
 			for name, value := range unindexed {
@@ -108,8 +117,16 @@ func scanBlocks(
 			}
 		}
 
+		events[i] = Event{
+			args: data,
+			contract: contract,
+			event: eventAbi.Name,
+			txHash: log.TxHash,
+		};
 		//slog.Info("Event", "event", data);
     }
+
+	return events, nil;
 }
 
 func loadAbis(contracts []config.Contract) (map[string]*abi.ABI, error) {
@@ -145,21 +162,31 @@ func loadAbis(contracts []config.Contract) (map[string]*abi.ABI, error) {
 	return abis, nil;
 }
 
-func worker(wg *sync.WaitGroup, ch chan ScanParams, cfg *config.Config, workerId uint) {
+func worker(
+	wg *sync.WaitGroup,
+	in chan ScanParams,
+	out chan []Event,
+	cfg *config.Config,
+	workerId uint,
+) {
 	defer wg.Done();
 
-	for job := range ch {
+	for job := range in {
 		slog.Info("Start work", "workerId", workerId, "job", job);
 
 		rpc := cfg.RpcNodes[rand.Intn(len(cfg.RpcNodes))];
 
-		scanBlocks(
+		events, err := scanBlocks(
 			job.contract,
 			rpc,
 			abis[job.contract],
 			job.startBlock,
 			job.endBlock,
 		);
+
+		if err == nil && len(events) != 0 {
+			out <- events;
+		}
 
 		time.Sleep(time.Second);
 	}
@@ -218,19 +245,20 @@ func main() {
 
 	var wg sync.WaitGroup;
 
-	ch := make(chan ScanParams);
+	in := make(chan ScanParams);
+	out := make(chan []Event);
 
 	wg.Add(int(cfg.MaxWorkers));
 
 	for i := range(cfg.MaxWorkers) {
-		go worker(&wg, ch, cfg, i);
+		go worker(&wg, in, out, cfg, i);
 	}
 
 	go func() {
 		slog.Info("Starting master...");
 
 		defer wg.Done();
-		defer close(ch);
+		defer close(in);
 
 		for lastBlock < latestBlock {
 			var params ScanParams = ScanParams{
@@ -239,7 +267,7 @@ func main() {
 				lastBlock + uint64(cfg.BlocksPerRequest),
 			};
 
-			ch <- params;
+			in <- params;
 
 			lastBlock += uint64(cfg.BlocksPerRequest);
 		}
