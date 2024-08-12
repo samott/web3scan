@@ -28,6 +28,13 @@ type ScanParams struct {
 	contract string;
 	startBlock uint64;
 	endBlock uint64;
+	index uint64;
+}
+
+type ScanResult struct {
+	events []Event;
+	index uint64;
+	endBlock uint64;
 }
 
 type Event struct {
@@ -162,10 +169,18 @@ func loadAbis(contracts []config.Contract) (map[string]*abi.ABI, error) {
 	return abis, nil;
 }
 
+func handleEvent(events Event) {
+	slog.Info("Handling event...");
+}
+
+func recordLastBlock(lastBlock uint64) {
+	slog.Info("Updating last block...", "lastBlock", lastBlock);
+}
+
 func worker(
 	wg *sync.WaitGroup,
 	in chan ScanParams,
-	out chan []Event,
+	out chan ScanResult,
 	cfg *config.Config,
 	workerId uint,
 ) {
@@ -185,7 +200,11 @@ func worker(
 		);
 
 		if err == nil && len(events) != 0 {
-			out <- events;
+			out <- ScanResult{
+				events,
+				job.index,
+				job.endBlock,
+			};
 		}
 
 		time.Sleep(time.Second);
@@ -246,7 +265,7 @@ func main() {
 	var wg sync.WaitGroup;
 
 	in := make(chan ScanParams);
-	out := make(chan []Event);
+	out := make(chan ScanResult);
 
 	wg.Add(int(cfg.MaxWorkers));
 
@@ -257,6 +276,8 @@ func main() {
 	go func() {
 		slog.Info("Starting master...");
 
+		var index uint64 = 0;
+
 		defer wg.Done();
 		defer close(in);
 
@@ -265,11 +286,52 @@ func main() {
 				contract.Address,
 				lastBlock + 1,
 				lastBlock + uint64(cfg.BlocksPerRequest),
+				index,
 			};
 
 			in <- params;
 
 			lastBlock += uint64(cfg.BlocksPerRequest);
+			index++;
+		}
+	}();
+
+	go func() {
+		// XXX: manage multiple contracts
+
+		queue := make(map[uint64]ScanResult);
+		next := uint64(0);
+
+		for result := range out {
+			queue[result.index] = result;
+
+			runLength := uint64(0);
+			endBlock := uint64(0);
+
+			for {
+				_, exists := queue[next + runLength];
+
+				if !exists {
+					break;
+				}
+
+				endBlock = queue[next + runLength].endBlock;
+				runLength++;
+			}
+
+			for i := uint64(0); i < runLength; i++ {
+				res := queue[next + i];
+
+				for j := 0; j < len(res.events); j++ {
+					handleEvent(res.events[j]);
+				}
+
+				recordLastBlock(endBlock);
+
+				delete(queue, res.index);
+			}
+
+			next += runLength;
 		}
 	}();
 
