@@ -32,6 +32,7 @@ type ScanParams struct {
 }
 
 type ScanResult struct {
+	contract string;
 	events []Event;
 	index uint64;
 	endBlock uint64;
@@ -169,12 +170,14 @@ func loadAbis(contracts []config.Contract) (map[string]*abi.ABI, error) {
 	return abis, nil;
 }
 
-func handleEvent(events Event) {
+func handleEvent(event Event, db *sql.DB) (error) {
 	slog.Info("Handling event...");
+	return nil;
 }
 
-func recordLastBlock(lastBlock uint64) {
+func recordLastBlock(lastBlock uint64, db *sql.DB) (error) {
 	slog.Info("Updating last block...", "lastBlock", lastBlock);
+	return nil;
 }
 
 func worker(
@@ -201,6 +204,7 @@ func worker(
 
 		if err == nil && len(events) != 0 {
 			out <- ScanResult{
+				job.contract,
 				events,
 				job.index,
 				job.endBlock,
@@ -297,12 +301,11 @@ func main() {
 	}();
 
 	go func() {
-		// XXX: manage multiple contracts
-
-		queue := make(map[uint64]ScanResult);
+		queues := make(map[string]map[uint64]ScanResult);
 		next := uint64(0);
 
 		for result := range out {
+			queue := queues[result.contract];
 			queue[result.index] = result;
 
 			runLength := uint64(0);
@@ -319,14 +322,18 @@ func main() {
 				runLength++;
 			}
 
+			if runLength == 0 {
+				continue;
+			}
+
 			for i := uint64(0); i < runLength; i++ {
 				res := queue[next + i];
 
 				for j := 0; j < len(res.events); j++ {
-					handleEvent(res.events[j]);
+					handleEvent(res.events[j], db);
 				}
 
-				recordLastBlock(endBlock);
+				recordLastBlock(endBlock, db);
 
 				delete(queue, res.index);
 			}
