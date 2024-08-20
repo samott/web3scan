@@ -4,6 +4,7 @@ import (
 	"time"
 	"sync"
 	"math/rand"
+	"encoding/json"
 	"context"
 	"log/slog"
 	"math/big"
@@ -42,6 +43,7 @@ type Event struct {
 	args map[string]any;
 	contract string;
 	event string;
+	blockNumber uint64;
 	txHash common.Hash;
 }
 
@@ -129,6 +131,7 @@ func scanBlocks(
 			args: data,
 			contract: contract,
 			event: eventAbi.Name,
+			blockNumber: log.BlockNumber,
 			txHash: log.TxHash,
 		};
 		//slog.Info("Event", "event", data);
@@ -170,14 +173,26 @@ func loadAbis(contracts []config.Contract) (map[string]*abi.ABI, error) {
 	return abis, nil;
 }
 
-func handleEvent(event Event, db *sql.DB) (error) {
+func handleEvent(event Event, db *sql.Tx) (error) {
 	slog.Info("Handling event...");
 	return nil;
 }
 
-func recordLastBlock(lastBlock uint64, db *sql.DB) (error) {
-	slog.Info("Updating last block...", "lastBlock", lastBlock);
-	return nil;
+func storeEvent(event Event, tx *sql.Tx) (error) {
+	data, err := json.Marshal(event.args);
+
+	if err != nil {
+		return err;
+	}
+
+	_, err = tx.Exec(`
+		INSERT INTO events
+		(event, contract, blockNumber, txHash, args)
+		VALUES
+		(?, ?, ?, ?, ?)
+	`, event.event, event.contract, event.blockNumber, event.txHash, data);
+
+	return err;
 }
 
 func worker(
@@ -329,11 +344,32 @@ func main() {
 			for i := uint64(0); i < runLength; i++ {
 				res := queue[next + i];
 
-				for j := 0; j < len(res.events); j++ {
-					handleEvent(res.events[j], db);
+				tx, err := db.Begin();
+
+				if err != nil {
+					slog.Error("Failed to create db tx", "error", err);
+					return;
 				}
 
-				recordLastBlock(endBlock, db);
+				for j := 0; j < len(res.events); j++ {
+					err = handleEvent(res.events[j], tx);
+
+					if err != nil {
+						break;
+					}
+
+					err = storeEvent(res.events[j], tx);
+
+					if err != nil {
+						break;
+					}
+				}
+
+				if err == nil {
+					tx.Commit();
+				} else {
+					tx.Rollback();
+				}
 
 				delete(queue, res.index);
 			}
