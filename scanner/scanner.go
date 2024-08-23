@@ -236,6 +236,73 @@ func (s *Scanner) master(latestBlock uint64) {
 	}
 }
 
+func (s *Scanner) processor() {
+	queues := make(map[string]map[uint64]ScanResult);
+	next := uint64(0);
+
+	for result := range s.out {
+		if _, exists := queues[result.contract]; !exists {
+			queues[result.contract] = make(map[uint64]ScanResult);
+		}
+
+		queue := queues[result.contract];
+		queue[result.index] = result;
+
+		runLength := uint64(0);
+		//endBlock := uint64(0);
+
+		for {
+			_, exists := queue[next + runLength];
+
+			if !exists {
+				break;
+			}
+
+			//endBlock = queue[next + runLength].endBlock;
+			runLength++;
+		}
+
+		if runLength == 0 {
+			continue;
+		}
+
+		for i := uint64(0); i < runLength; i++ {
+			res := queue[next + i];
+
+			tx, err := s.db.Begin();
+
+			if err != nil {
+				slog.Error("Failed to create db tx", "error", err);
+				return;
+			}
+
+			for j := 0; j < len(res.events); j++ {
+				err = s.handleEvent(res.events[j], tx);
+
+				if err != nil {
+					break;
+				}
+
+				err = s.storeEvent(res.events[j], tx);
+
+				if err != nil {
+					break;
+				}
+			}
+
+			if err == nil {
+				tx.Commit();
+			} else {
+				tx.Rollback();
+			}
+
+			delete(queue, res.index);
+		}
+
+		next += runLength;
+	}
+}
+
 func (s *Scanner) Run() {
 	client, err := ethclient.Dial(s.cfg.RpcNodes[0]);
 
@@ -259,72 +326,7 @@ func (s *Scanner) Run() {
 
 	go s.master(latestBlock);
 
-	go func() {
-		queues := make(map[string]map[uint64]ScanResult);
-		next := uint64(0);
-
-		for result := range s.out {
-			if _, exists := queues[result.contract]; !exists {
-				queues[result.contract] = make(map[uint64]ScanResult);
-			}
-
-			queue := queues[result.contract];
-			queue[result.index] = result;
-
-			runLength := uint64(0);
-			//endBlock := uint64(0);
-
-			for {
-				_, exists := queue[next + runLength];
-
-				if !exists {
-					break;
-				}
-
-				//endBlock = queue[next + runLength].endBlock;
-				runLength++;
-			}
-
-			if runLength == 0 {
-				continue;
-			}
-
-			for i := uint64(0); i < runLength; i++ {
-				res := queue[next + i];
-
-				tx, err := s.db.Begin();
-
-				if err != nil {
-					slog.Error("Failed to create db tx", "error", err);
-					return;
-				}
-
-				for j := 0; j < len(res.events); j++ {
-					err = s.handleEvent(res.events[j], tx);
-
-					if err != nil {
-						break;
-					}
-
-					err = s.storeEvent(res.events[j], tx);
-
-					if err != nil {
-						break;
-					}
-				}
-
-				if err == nil {
-					tx.Commit();
-				} else {
-					tx.Rollback();
-				}
-
-				delete(queue, res.index);
-			}
-
-			next += runLength;
-		}
-	}();
+	go s.processor();
 
 	s.wg.Wait();
 }
