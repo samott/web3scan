@@ -328,7 +328,7 @@ func main() {
 			queue[result.index] = result;
 
 			runLength := uint64(0);
-			endBlock := uint64(0);
+			//endBlock := uint64(0);
 
 			for {
 				_, exists := queue[next + runLength];
@@ -337,7 +337,7 @@ func main() {
 					break;
 				}
 
-				endBlock = queue[next + runLength].endBlock;
+				//endBlock = queue[next + runLength].endBlock;
 				runLength++;
 			}
 
