@@ -320,6 +320,10 @@ func main() {
 		next := uint64(0);
 
 		for result := range out {
+			if _, exists := queues[result.contract]; !exists {
+				queues[result.contract] = make(map[uint64]ScanResult);
+			}
+
 			queue := queues[result.contract];
 			queue[result.index] = result;
 
