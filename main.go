@@ -117,7 +117,7 @@ func handleEvent(event *scanner.Event, tx *sql.Tx) (error) {
 		return err;
 	}
 
-	amountStr := amountDec.Div(scale).StringFixed(currency.decimals);
+	amountDec = amountDec.Div(scale);
 
 	fromStr := strings.ToLower(from.(string));
 	toStr := strings.ToLower(to.(string));
@@ -126,12 +126,15 @@ func handleEvent(event *scanner.Event, tx *sql.Tx) (error) {
 
 	if _, exists := users[fromStr]; exists {
 		user = fromStr;
+		amountDec = amountDec.Neg();
 	} else if _, exists := users[toStr]; exists {
 		user = toStr;
 	} else {
 		// Not one of our users - don't track
 		return nil;
 	}
+
+	amountStr := amountDec.StringFixed(currency.decimals);
 
 	slog.Info(
 		"Updating user balance...",
@@ -146,10 +149,12 @@ func handleEvent(event *scanner.Event, tx *sql.Tx) (error) {
 	_, err = tx.Exec(`
 		UPDATE balances
 		SET balance = balance + CAST(? AS Decimal(32, 18))
-		WHERE wallet = ?
+		WHERE user = ?
 		AND currency = ?
 		AND (balance - ?) >= 0
-	`, user, currency.id, amountStr);
+		ON DUPLICATE KEY UPDATE
+		balance = balance + CAST(? AS Decimal(32, 18))
+	`, amountStr, user, currency.id, amountStr, amountStr);
 
 	return err;
 }
