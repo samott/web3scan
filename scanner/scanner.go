@@ -24,7 +24,7 @@ type Scanner struct {
 	cfg *config.Config;
 	db *sql.DB;
 	abis map[string]*abi.ABI;
-	handleEvent func(event Event, db *sql.Tx) (error);
+	handleEvent EventHandler;
 	in chan ScanParams;
 	out chan ScanResult;
 	wg sync.WaitGroup;
@@ -52,11 +52,13 @@ type Event struct {
 	txHash common.Hash;
 }
 
+type EventHandler func(event *Event, db *sql.Tx) (error);
+
 func New(
 	cfg *config.Config,
 	db *sql.DB,
 	abis map[string]*abi.ABI,
-	handleEvent func(event Event, db *sql.Tx) (error),
+	handleEvent EventHandler,
 ) (*Scanner) {
 	return &Scanner{
 		cfg,
@@ -277,7 +279,7 @@ func (s *Scanner) processor() {
 			}
 
 			for j := 0; j < len(res.events); j++ {
-				err = s.handleEvent(res.events[j], tx);
+				err = s.handleEvent(&res.events[j], tx);
 
 				if err != nil {
 					break;
