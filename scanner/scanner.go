@@ -45,11 +45,11 @@ type ScanResult struct {
 }
 
 type Event struct {
-	args map[string]any;
-	contract string;
-	event string;
-	blockNumber uint64;
-	txHash common.Hash;
+	Args map[string]any;
+	Contract string;
+	Event string;
+	BlockNumber uint64;
+	TxHash common.Hash;
 }
 
 type EventHandler func(event *Event, db *sql.Tx) (error);
@@ -152,11 +152,11 @@ func scanBlocks(
 		}
 
 		events[i] = Event{
-			args: data,
-			contract: contract,
-			event: eventAbi.Name,
-			blockNumber: log.BlockNumber,
-			txHash: log.TxHash,
+			Args: data,
+			Contract: contract,
+			Event: eventAbi.Name,
+			BlockNumber: log.BlockNumber,
+			TxHash: log.TxHash,
 		};
 		//slog.Info("Event", "event", data);
 	}
@@ -165,7 +165,7 @@ func scanBlocks(
 }
 
 func (s *Scanner) storeEvent(event Event, tx *sql.Tx) (error) {
-	data, err := json.Marshal(event.args);
+	data, err := json.Marshal(event.Args);
 
 	if err != nil {
 		return err;
@@ -176,7 +176,7 @@ func (s *Scanner) storeEvent(event Event, tx *sql.Tx) (error) {
 		(event, contract, blockNumber, txHash, args)
 		VALUES
 		(?, ?, ?, ?, ?)
-	`, event.event, event.contract, event.blockNumber, event.txHash, data);
+	`, event.Event, event.Contract, event.BlockNumber, event.TxHash, data);
 
 	return err;
 }
