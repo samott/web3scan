@@ -55,7 +55,7 @@ func loadAbis(contracts []config.Contract) (map[string]*abi.ABI, error) {
 }
 
 func handleEvent(event *scanner.Event, tx *sql.Tx) (error) {
-	// Custom handler for ERC20 tranfers
+	// Custom handler for ERC20 transfers
 
 	slog.Info("Handling event...");
 
@@ -151,7 +151,7 @@ func handleEvent(event *scanner.Event, tx *sql.Tx) (error) {
 		SET balance = balance + CAST(? AS Decimal(32, 18))
 		WHERE user = ?
 		AND currency = ?
-		AND (balance - ?) >= 0
+		AND (balance + ?) >= 0
 		ON DUPLICATE KEY UPDATE
 		balance = balance + CAST(? AS Decimal(32, 18))
 	`, amountStr, user, currency.id, amountStr, amountStr);
